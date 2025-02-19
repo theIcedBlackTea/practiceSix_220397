@@ -17,11 +17,11 @@ app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
 //Sesiones almacenadas en Memoria(RAM) - Cuando Express cae, todo cae.
-
+//const sessions = {};
 
 app.use(
     session({
-        secret: "P4-DJBG#Soundwave-SesionesHTTP-VariablesDeSesion",
+        secret: "P4-ZAZP#Soundwave-SesionesHTTP-VariablesDeSesion",
         resave: false,
         saveUninitialized: false,
         cookie: {maxAge: 5* 60 * 1000 } //mil milisegundos
@@ -34,16 +34,17 @@ const getCDMXDateTime = () => {
     return moment().tz('America/Mexico_City').format('DD-MM-YYYY HH:mm:ss');
 };
 
-const calculateInactivityTime = (lastAccesed) => {
+const calculateInactivityTime = (lastAccessed) => {
     try {
-        const now = moment().tz('America/Mexico_City').tz('America/Mexico_City').format('YYYY-MM-DD HH:mm:ss');
-        const lastAccess = moment.tz(lastAccesed, 'DD-MM-YYYY HH:mm:ss', 'America/Mexico_City');
+        const now = moment().tz('America/Mexico_City');
+        const lastAccess = moment.tz(lastAccessed, 'DD-MM-YYYY HH:mm:ss', 'America/Mexico_City');
         
-        const diff = moment.duration(now.diff(lastAccess));
+        const diffMs = now.diff(lastAccess);
+        const duration = moment.duration(diffMs);
         
-        const hours = Math.floor(diff.asHours()) % 24;
-        const minutes = diff.minutes();
-        const seconds = diff.seconds();
+        const hours = Math.floor(duration.asHours());
+        const minutes = duration.minutes();
+        const seconds = duration.seconds();
         
         return {
             hours,
@@ -105,10 +106,12 @@ const getClientInfo = (req) => {
 
 app.get('/', (req, res) => {
     return res.status(200).json({
-        message: "Ésta es la API de Control de Sesiones", 
-        author: "Daniel de Jesús Bravo Godínez"
+        message: "Bienvenid@ al API de Control de Sesiones", 
+        author: "Zyanya Ahuachtli Zacatenco Pedroza"
     });
 });
+
+
 
 app.post('/login', async (req, res) => {
     try {
@@ -155,6 +158,8 @@ app.post('/login', async (req, res) => {
     }
 });
 
+
+
 app.post("/logout", async (req, res) => {
     try {
         const { sessionId } = req.body;
@@ -179,6 +184,8 @@ app.post("/logout", async (req, res) => {
         res.status(500).json({message: "Error al cerrar sesión", error: error.message});
     }
 });
+
+
 
 app.put("/update", async (req, res) => {
     try {
@@ -212,6 +219,8 @@ app.put("/update", async (req, res) => {
         res.status(500).json({message: "Error al actualizar la sesión", error: error.message});
     }
 });
+
+
 
 app.get("/status", async (req, res) => {
     try {
@@ -254,7 +263,50 @@ app.get("/status", async (req, res) => {
     }
 });
 
-app.get("/listCurrentSessions", async (req, res) => {
+
+
+app.get("/allSessions", async (req, res) => {
+    try {
+        const allSessions = await Session.find({});
+
+        if (allSessions.length === 0) {
+            return res.status(200).json({
+                message: "No hay sesiones registradas",
+                count: 0,
+                sessions: []
+            });
+        }
+
+        const serverInfo = getServerInfo();
+        const clientInfo = getClientInfo(req);
+
+        const updatedSessions = allSessions.map(session => {
+            const sessionObj = session.toObject();
+            return {
+                ...sessionObj,
+                clientInfo: {
+                    ...sessionObj.clientInfo,
+                    ip: clientInfo.ip
+                },
+                serverInfo: serverInfo,
+                inactivityTime: calculateInactivityTime(session.lastAccesed)
+            };
+        });
+
+        return res.status(200).json({
+            message: "Sesiones encontradas",
+            count: updatedSessions.length,
+            sessions: updatedSessions
+        });
+    } catch (error) {
+        console.error('Error en allSessions:', error);
+        res.status(500).json({message: "Error al listar las sesiones", error: error.message});
+    }
+});
+
+
+
+app.get("/allCurrentSessions", async (req, res) => {
     try {
         const activeSessions = await Session.find({ status: 'Activa' });
 
@@ -268,14 +320,18 @@ app.get("/listCurrentSessions", async (req, res) => {
 
         const serverInfo = getServerInfo();
         const clientInfo = getClientInfo(req);
-        const currentTime = getCDMXDateTime();
 
         const updatedSessions = activeSessions.map(session => {
             const sessionObj = session.toObject();
-            sessionObj.clientInfo.ip = clientInfo.ip;
-            sessionObj.serverInfo = serverInfo;
-            sessionObj.inactivityTime = calculateInactivityTime(session.lastAccesed);
-            return sessionObj;
+            return {
+                ...sessionObj,
+                clientInfo: {
+                    ...sessionObj.clientInfo,
+                    ip: clientInfo.ip
+                },
+                serverInfo: serverInfo,
+                inactivityTime: calculateInactivityTime(session.lastAccesed)
+            };
         });
 
         return res.status(200).json({
@@ -284,8 +340,20 @@ app.get("/listCurrentSessions", async (req, res) => {
             sessions: updatedSessions
         });
     } catch (error) {
-        console.error('Error en listCurrentSessions:', error);
-        res.status(500).json({message: "Error al listar las sesiones", error: error.message});
+        console.error('Error en allCurrentSessions:', error);
+        res.status(500).json({message: "Error al listar las sesiones activas", error: error.message});
+    }
+});
+
+app.delete("/deleteAllSessions", async (req, res) => {
+    try {
+        await Session.deleteMany({});
+        return res.status(200).json({
+            message: "Todas las sesiones han sido eliminadas correctamente"
+        });
+    } catch (error) {
+        console.error('Error en deleteAllSessions:', error);
+        res.status(500).json({message: "Error al eliminar las sesiones", error: error.message});
     }
 });
 
